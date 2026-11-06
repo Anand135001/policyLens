@@ -1,10 +1,13 @@
 from fastapi import FastAPI
+from app.core.config import get_settings
 
+settings = get_settings()
 
 app = FastAPI(
-    title="PolicyLens API",
+    title=settings.app_name,
     description="RAG system for evolving government documents",
-    version="0.1.0",
+    version=settings.app_version,
+    debug=settings.debug,
 )
 
 
