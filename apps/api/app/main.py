@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.db.session import get_db
+from app.api.routes.documents import router as document_router
 
 settings = get_settings()
 
@@ -14,6 +15,8 @@ app = FastAPI(
     version=settings.app_version,
     debug=settings.debug,
 )
+
+app.include_router(document_router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["Health"])
