@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 
 from app.models import Document, DocumentVersion
+from sqlalchemy import text
 
 
 def test_document_version_relationship_and_cascade_delete(
@@ -37,3 +38,34 @@ def test_document_version_relationship_and_cascade_delete(
 
     assert db_session.get(Document, document_id) is None
     assert db_session.get(DocumentVersion, version_id) is None
+
+
+
+
+def test_postgresql_foreign_key_cascade_delete(db_session: Session):
+    document = Document(title="Cascade Test Policy")
+    version = DocumentVersion(
+        version_label="2026",
+        document=document,
+    )
+
+    db_session.add(document)
+    db_session.flush()
+
+    document_id = document.id
+    version_id = version.id
+
+    # Execute SQL directly, bypassing ORM cascade.
+    db_session.execute(
+        text("DELETE FROM documents WHERE id = :id"),
+        {"id": document_id},
+    )
+
+    remaining = db_session.execute(
+        text(
+            "SELECT COUNT(*) FROM document_versions WHERE id = :id"
+        ),
+        {"id": version_id},
+    ).scalar_one()
+
+    assert remaining == 0
