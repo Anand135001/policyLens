@@ -18,3 +18,12 @@ class DocumentRead(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class DocumentVersionRead(BaseModel):
+    id: UUID
+    document_id: UUID
+    version_label: str | None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
