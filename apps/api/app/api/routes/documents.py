@@ -10,6 +10,7 @@ from app.models import Document
 from app.models import DocumentVersion
 from app.schemas.document import DocumentCreate, DocumentRead
 from app.schemas.document import DocumentVersionRead
+from app.services.pdf_parser import parse_pdf
 
 from app.core.config import PROJECT_ROOT
 
@@ -102,3 +103,42 @@ def upload_document_version(
 
     finally:
         file.file.close()
+
+
+
+@router.post(
+    "/{document_id}/versions/{version_id}/parse",
+    tags=["Document Processing"],
+)
+def parse_document_version(
+    document_id: UUID,
+    version_id: UUID,
+    db: Session = Depends(get_db),
+):
+    version = db.scalar(
+        select(DocumentVersion).where(
+            DocumentVersion.id == version_id,
+            DocumentVersion.document_id == document_id,
+        )
+    )
+
+    if version is None:
+        raise HTTPException(404, "Document version not found")
+
+    if not version.storage_path:
+        raise HTTPException(400, "No PDF stored for this version")
+
+    pdf_path = (PROJECT_ROOT / version.storage_path).resolve()
+    uploads_root = (PROJECT_ROOT / "uploads").resolve()
+
+    # Only process files inside our uploads directory.
+    if uploads_root not in pdf_path.parents:
+        raise HTTPException(400, "Invalid PDF storage path")
+
+    try:
+        return {
+            "version_id": str(version.id),
+            **parse_pdf(pdf_path),
+        }
+    except FileNotFoundError:
+        raise HTTPException(404, "Uploaded PDF file not found")
