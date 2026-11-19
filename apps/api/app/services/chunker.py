@@ -21,7 +21,7 @@ def _walk_elements(data: dict):
         if not node:
             return
 
-        if ref.startswith("#/groups/"):
+        if ref.startswith("#/groups/") or ref.startswith("#/pictures/"):
             for child in node.get("children", []):
                 yield from walk(child["$ref"])
 
