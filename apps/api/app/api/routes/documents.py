@@ -6,11 +6,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.models import Document
-from app.models import DocumentVersion
+from app.models import Document, DocumentVersion, DocumentChunk
 from app.schemas.document import DocumentCreate, DocumentRead
 from app.schemas.document import DocumentVersionRead
 from app.services.pdf_parser import parse_pdf
+from app.services.chunker import chunk_docling_json
 
 from app.core.config import PROJECT_ROOT
 
@@ -131,14 +131,46 @@ def parse_document_version(
     pdf_path = (PROJECT_ROOT / version.storage_path).resolve()
     uploads_root = (PROJECT_ROOT / "uploads").resolve()
 
-    # Only process files inside our uploads directory.
     if uploads_root not in pdf_path.parents:
         raise HTTPException(400, "Invalid PDF storage path")
 
     try:
+        # 1. Extract PDF content.
+        parse_result = parse_pdf(pdf_path)
+
+        # 2. Generate section-aware chunks.
+        chunks = chunk_docling_json(Path(parse_result["json_path"]))
+
+        if not chunks:
+            raise HTTPException(422, "No extractable content found")
+
+        # 3. Replace existing chunks for this version.
+        db.query(DocumentChunk).filter(
+            DocumentChunk.version_id == version.id
+        ).delete(synchronize_session=False)
+
+        # 4. Store new chunks.
+        db.add_all([
+            DocumentChunk(
+                version_id=version.id,
+                chunk_index=chunk["chunk_index"],
+                content=chunk["text"],
+                section_path=chunk["metadata"]["section_path"],
+                page_numbers=chunk["metadata"]["page_numbers"],
+                element_labels=chunk["metadata"]["element_labels"],
+            )
+            for chunk in chunks
+        ])
+
+        db.commit()
+
         return {
             "version_id": str(version.id),
-            **parse_pdf(pdf_path),
+            "status": "processed",
+            "page_count": parse_result["page_count"],
+            "chunk_count": len(chunks),
         }
-    except FileNotFoundError:
-        raise HTTPException(404, "Uploaded PDF file not found")
+
+    except Exception:
+        db.rollback()
+        raise
