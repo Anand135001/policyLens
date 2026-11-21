@@ -48,6 +48,14 @@ class Settings(BaseSettings):
         validation_alias="POSTGRES_PASSWORD",
     )
 
+    gemini_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias="GEMINI_API_KEY",
+    )
+    
+    embedding_model: str = "gemini-embedding-2"
+    embedding_dimensions: int = 768
+
 
 @lru_cache
 def get_settings() -> Settings:
