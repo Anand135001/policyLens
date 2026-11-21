@@ -11,7 +11,7 @@ from app.schemas.document import DocumentCreate, DocumentRead
 from app.schemas.document import DocumentVersionRead
 from app.services.pdf_parser import parse_pdf
 from app.services.chunker import chunk_docling_json
-from app.services.embeddings import generate_embedding
+from app.services.embedding import generate_embedding
 
 from app.core.config import PROJECT_ROOT
 
