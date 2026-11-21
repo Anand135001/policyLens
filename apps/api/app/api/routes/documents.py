@@ -11,6 +11,7 @@ from app.schemas.document import DocumentCreate, DocumentRead
 from app.schemas.document import DocumentVersionRead
 from app.services.pdf_parser import parse_pdf
 from app.services.chunker import chunk_docling_json
+from app.services.embeddings import generate_embedding
 
 from app.core.config import PROJECT_ROOT
 
@@ -29,6 +30,7 @@ def create_document(
     db.refresh(document)
 
     return document
+
 
 
 @router.get("/", response_model=list[DocumentRead])
@@ -169,6 +171,57 @@ def parse_document_version(
             "status": "processed",
             "page_count": parse_result["page_count"],
             "chunk_count": len(chunks),
+        }
+
+    except Exception:
+        db.rollback()
+        raise
+
+
+
+@router.post(
+    "/{document_id}/versions/{version_id}/embed",
+    tags=["Document Processing"],
+)
+def embed_document_version(
+    document_id: UUID,
+    version_id: UUID,
+    db: Session = Depends(get_db),
+):
+    version = db.scalar(
+        select(DocumentVersion).where(
+            DocumentVersion.id == version_id,
+            DocumentVersion.document_id == document_id,
+        )
+    )
+
+    if version is None:
+        raise HTTPException(404, "Document version not found")
+
+    document = db.get(Document, document_id)
+
+    chunks = db.scalars(
+        select(DocumentChunk)
+        .where(
+            DocumentChunk.version_id == version_id,
+            DocumentChunk.embedding.is_(None),
+        )
+        .order_by(DocumentChunk.chunk_index)
+    ).all()
+
+    try:
+        for chunk in chunks:
+            chunk.embedding = generate_embedding(
+                text=chunk.content,
+                title=document.title,
+            )
+
+        db.commit()
+
+        return {
+            "status": "completed",
+            "embedded_chunks": len(chunks),
+            "dimensions": 768,
         }
 
     except Exception:
