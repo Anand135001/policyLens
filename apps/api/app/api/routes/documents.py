@@ -9,9 +9,10 @@ from app.db.session import get_db
 from app.models import Document, DocumentVersion, DocumentChunk
 from app.schemas.document import DocumentCreate, DocumentRead
 from app.schemas.document import DocumentVersionRead
+from app.schemas.search import SearchRequest
 from app.services.pdf_parser import parse_pdf
 from app.services.chunker import chunk_docling_json
-from app.services.embedding import generate_embedding
+from app.services.embedding import generate_embedding, generate_query_embedding
 
 from app.core.config import PROJECT_ROOT
 
@@ -227,3 +228,48 @@ def embed_document_version(
     except Exception:
         db.rollback()
         raise
+
+
+
+
+@router.post("/search", tags=["Semantic Search"])
+def semantic_search(
+    payload: SearchRequest,
+    db: Session = Depends(get_db),
+):
+    query_embedding = generate_query_embedding(payload.query)
+
+    distance = DocumentChunk.embedding.cosine_distance(
+        query_embedding
+    ).label("distance")
+
+    statement = (
+        select(DocumentChunk, Document, DocumentVersion, distance)
+        .join(DocumentVersion, DocumentChunk.version_id == DocumentVersion.id)
+        .join(Document, DocumentVersion.document_id == Document.id)
+        .where(DocumentChunk.embedding.is_not(None))
+        .order_by(distance)
+        .limit(payload.limit)
+    )
+
+    if payload.version_id:
+        statement = statement.where(DocumentVersion.id == payload.version_id)
+
+    rows = db.execute(statement).all()
+
+    return {
+        "query": payload.query,
+        "results": [
+            {
+                "document_title": document.title,
+                "version_id": str(version.id),
+                "version_label": version.version_label,
+                "chunk_id": str(chunk.id),
+                "content": chunk.content,
+                "section": chunk.section_path,
+                "pages": chunk.page_numbers,
+                "cosine_distance": round(float(distance_value), 4),
+            }
+            for chunk, document, version, distance_value in rows
+        ],
+    }
