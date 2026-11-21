@@ -56,6 +56,7 @@ class Settings(BaseSettings):
     embedding_model: str = "gemini-embedding-2"
     embedding_dimensions: int = 768
 
+    generation_model: str = "gemini-3.8-flash" 
 
 @lru_cache
 def get_settings() -> Settings:
