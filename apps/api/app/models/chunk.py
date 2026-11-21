@@ -4,6 +4,8 @@ from uuid import UUID, uuid4
 from sqlalchemy import DateTime, ForeignKey, Integer, JSON, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
+from pgvector.sqlalchemy import Vector
+
 from app.db.base import Base
 
 
@@ -32,3 +34,5 @@ class DocumentChunk(Base):
         DateTime(timezone=True),
         server_default=func.now(),
     )
+
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(768), nullable=True)
