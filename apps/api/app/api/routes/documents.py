@@ -1,3 +1,5 @@
+from google.genai.errors import ServerError
+
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -10,9 +12,11 @@ from app.models import Document, DocumentVersion, DocumentChunk
 from app.schemas.document import DocumentCreate, DocumentRead
 from app.schemas.document import DocumentVersionRead
 from app.schemas.search import SearchRequest
+from app.schemas.search import AskRequest
 from app.services.pdf_parser import parse_pdf
 from app.services.chunker import chunk_docling_json
 from app.services.embedding import generate_embedding, generate_query_embedding
+from app.services.answer import generate_grounded_answer
 
 from app.core.config import PROJECT_ROOT
 
@@ -231,7 +235,6 @@ def embed_document_version(
 
 
 
-
 @router.post("/search", tags=["Semantic Search"])
 def semantic_search(
     payload: SearchRequest,
@@ -271,5 +274,86 @@ def semantic_search(
                 "cosine_distance": round(float(distance_value), 4),
             }
             for chunk, document, version, distance_value in rows
+        ],
+    }
+
+
+
+@router.post("/ask", tags=["RAG"])
+def ask_documents(
+    payload: AskRequest,
+    db: Session = Depends(get_db),
+):
+    # Convert the question into an embedding.
+    query_embedding = generate_query_embedding(payload.query)
+
+    # Retrieve relevant document chunks.
+    distance = DocumentChunk.embedding.cosine_distance(
+        query_embedding
+    ).label("distance")
+
+    statement = (
+        select(DocumentChunk, Document, DocumentVersion, distance)
+        .join(
+            DocumentVersion,
+            DocumentChunk.version_id == DocumentVersion.id,
+        )
+        .join(
+            Document,
+            DocumentVersion.document_id == Document.id,
+        )
+        .where(DocumentChunk.embedding.is_not(None))
+        .order_by(distance)
+        .limit(payload.top_k)
+    )
+
+    if payload.version_id:
+        statement = statement.where(
+            DocumentVersion.id == payload.version_id
+        )
+
+    rows = db.execute(statement).all()
+
+    if not rows:
+        return {
+            "question": payload.query,
+            "answer": "I couldn't find sufficient evidence in the uploaded documents to answer this question.",
+            "sources": [],
+        }
+
+    # Prepare source references.
+    sources = []
+
+    for index, (chunk, document, version, distance_value) in enumerate(
+        rows, start=1
+    ):
+        sources.append({
+            "source_id": f"S{index}",
+            "document_title": document.title,
+            "version_label": version.version_label,
+            "pages": chunk.page_numbers,
+            "section": chunk.section_path,
+            "content": chunk.content,
+        })
+
+    # Generate an evidence-grounded answer.
+    answer = generate_grounded_answer(
+        question=payload.query,
+        sources=sources,
+    )
+
+    # Return answer and source metadata.
+    return {
+        "question": payload.query,
+        "answer": answer,
+        "sources": [
+            {
+                "citation": f"[S{index}]",
+                "document_title": source["document_title"],
+                "version_label": source["version_label"],
+                "pages": source["pages"],
+                "section": source["section"],
+            }
+            for index, source in enumerate(sources, start=1)
         ],
     }
