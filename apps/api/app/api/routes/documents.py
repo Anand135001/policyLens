@@ -22,6 +22,7 @@ from app.core.config import PROJECT_ROOT
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
 
+MAX_COSINE_DISTANCE = 0.45
 
 @router.post("/", response_model=DocumentRead, status_code=status.HTTP_201_CREATED,)
 def create_document(
@@ -250,7 +251,10 @@ def semantic_search(
         select(DocumentChunk, Document, DocumentVersion, distance)
         .join(DocumentVersion, DocumentChunk.version_id == DocumentVersion.id)
         .join(Document, DocumentVersion.document_id == Document.id)
-        .where(DocumentChunk.embedding.is_not(None))
+        .where(
+            DocumentChunk.embedding.is_not(None),
+            DocumentChunk.embedding.cosine_distance(query_embedding) <= MAX_COSINE_DISTANCE
+        )
         .order_by(distance)
         .limit(payload.limit)
     )
