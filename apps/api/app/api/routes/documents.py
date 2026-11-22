@@ -337,10 +337,16 @@ def ask_documents(
         })
 
     # Generate an evidence-grounded answer.
-    answer = generate_grounded_answer(
-        question=payload.query,
-        sources=sources,
-    )
+    try:
+        answer = generate_grounded_answer(
+            question=payload.query,
+            sources=sources,
+        )
+    except ServerError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Gemini is temporarily unavailable. Please retry shortly.",
+    ) from exc
 
     # Return answer and source metadata.
     return {
