@@ -1,7 +1,19 @@
-
+import re
 import json
 from pathlib import Path
 from typing import Any
+
+
+def _is_fragment_heading(text: str) -> bool:
+    patterns = [
+        r"version\s*\d+",
+        r"commit\s+[0-9a-f]{20,40}",
+    ]
+
+    return any(
+        re.fullmatch(pattern, text.strip(), re.IGNORECASE)
+        for pattern in patterns
+    )
 
 
 def _resolve_ref(data: dict, ref: str) -> dict | None:
@@ -120,7 +132,7 @@ def chunk_docling_json(
             continue
 
         # A heading starts a new semantic section.
-        if label == "section_header":
+        if label == "section_header" and not _is_fragment_heading(content):
             flush()
 
             level = max(1, int(element.get("level", 1)))
