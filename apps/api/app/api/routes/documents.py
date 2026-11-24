@@ -9,14 +9,14 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models import Document, DocumentVersion, DocumentChunk
-from app.schemas.document import DocumentCreate, DocumentRead
-from app.schemas.document import DocumentVersionRead
+from app.schemas.document import DocumentCreate, DocumentRead, DocumentVersionRead
 from app.schemas.search import SearchRequest
 from app.schemas.search import AskRequest
 from app.services.pdf_parser import parse_pdf
 from app.services.chunker import chunk_docling_json
 from app.services.embedding import generate_embedding, generate_query_embedding
 from app.services.answer import generate_grounded_answer
+from app.services.retrieval import retrieve_chunks
 
 from app.core.config import PROJECT_ROOT
 
@@ -241,43 +241,27 @@ def semantic_search(
     payload: SearchRequest,
     db: Session = Depends(get_db),
 ):
-    query_embedding = generate_query_embedding(payload.query)
-
-    distance = DocumentChunk.embedding.cosine_distance(
-        query_embedding
-    ).label("distance")
-
-    statement = (
-        select(DocumentChunk, Document, DocumentVersion, distance)
-        .join(DocumentVersion, DocumentChunk.version_id == DocumentVersion.id)
-        .join(Document, DocumentVersion.document_id == Document.id)
-        .where(
-            DocumentChunk.embedding.is_not(None),
-            DocumentChunk.embedding.cosine_distance(query_embedding) <= MAX_COSINE_DISTANCE
-        )
-        .order_by(distance)
-        .limit(payload.limit)
+    results = retrieve_chunks(
+        db=db,
+        query=payload.query,
+        version_id=payload.version_id,
+        limit=payload.limit,
     )
-
-    if payload.version_id:
-        statement = statement.where(DocumentVersion.id == payload.version_id)
-
-    rows = db.execute(statement).all()
 
     return {
         "query": payload.query,
         "results": [
             {
-                "document_title": document.title,
-                "version_id": str(version.id),
-                "version_label": version.version_label,
-                "chunk_id": str(chunk.id),
-                "content": chunk.content,
-                "section": chunk.section_path,
-                "pages": chunk.page_numbers,
-                "cosine_distance": round(float(distance_value), 4),
+                "document_title": item["document"].title,
+                "version_id": str(item["version"].id),
+                "version_label": item["version"].version_label,
+                "chunk_id": str(item["chunk"].id),
+                "content": item["chunk"].content,
+                "section": item["chunk"].section_path,
+                "pages": item["chunk"].page_numbers,
+                "cosine_distance": round(item["distance"], 4),
             }
-            for chunk, document, version, distance_value in rows
+            for item in results
         ],
     }
 
@@ -288,49 +272,33 @@ def ask_documents(
     payload: AskRequest,
     db: Session = Depends(get_db),
 ):
-    # Convert the question into an embedding.
-    query_embedding = generate_query_embedding(payload.query)
-
     # Retrieve relevant document chunks.
-    distance = DocumentChunk.embedding.cosine_distance(
-        query_embedding
-    ).label("distance")
-
-    statement = (
-        select(DocumentChunk, Document, DocumentVersion, distance)
-        .join(
-            DocumentVersion,
-            DocumentChunk.version_id == DocumentVersion.id,
-        )
-        .join(
-            Document,
-            DocumentVersion.document_id == Document.id,
-        )
-        .where(DocumentChunk.embedding.is_not(None))
-        .order_by(distance)
-        .limit(payload.top_k)
+    results = retrieve_chunks(
+        db=db,
+        query=payload.query,
+        version_id=payload.version_id,
+        limit=payload.top_k,
     )
 
-    if payload.version_id:
-        statement = statement.where(
-            DocumentVersion.id == payload.version_id
-        )
-
-    rows = db.execute(statement).all()
-
-    if not rows:
+    # Abstain when no supporting evidence is found.
+    if not results:
         return {
             "question": payload.query,
-            "answer": "I couldn't find sufficient evidence in the uploaded documents to answer this question.",
+            "answer": (
+                "I couldn't find sufficient evidence in the "
+                "uploaded documents to answer this question."
+            ),
             "sources": [],
         }
 
     # Prepare source references.
     sources = []
 
-    for index, (chunk, document, version, distance_value) in enumerate(
-        rows, start=1
-    ):
+    for index, item in enumerate(results, start=1):
+        chunk = item["chunk"]
+        document = item["document"]
+        version = item["version"]
+
         sources.append({
             "source_id": f"S{index}",
             "document_title": document.title,
@@ -349,8 +317,11 @@ def ask_documents(
     except ServerError as exc:
         raise HTTPException(
             status_code=503,
-            detail="Gemini is temporarily unavailable. Please retry shortly.",
-    ) from exc
+            detail=(
+                "Gemini is temporarily unavailable. "
+                "Please retry shortly."
+            ),
+        ) from exc
 
     # Return answer and source metadata.
     return {
