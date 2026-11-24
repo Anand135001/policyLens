@@ -1,0 +1,5 @@
+
+{"id":"git_upload","query":"How can I upload my local code to GitHub?","version_id":"3194cce3-70d7-4e0c-b269-77f0ce9565ac","expected_sections":["Uploading Code to GitHub"],"should_abstain":false}
+{"id":"git_download","query":"How do I download an existing repository from GitHub?","version_id":"3194cce3-70d7-4e0c-b269-77f0ce9565ac","expected_sections":["Downloading Code from GitHub"],"should_abstain":false}
+{"id":"git_remote","query":"What is the difference between a local repository and a remote repository?","version_id":"3194cce3-70d7-4e0c-b269-77f0ce9565ac","expected_sections":["GitHub"],"should_abstain":false}
+{"id":"pm_kisan","query":"What are the eligibility criteria for PM-KISAN?","version_id":"3194cce3-70d7-4e0c-b269-77f0ce9565ac","expected_sections":[],"should_abstain":true}
