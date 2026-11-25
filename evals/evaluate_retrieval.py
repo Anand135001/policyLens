@@ -25,6 +25,8 @@ def main():
     abstention_total = 0
     correct_abstentions = 0
 
+    reciprocal_rank_sum = 0.0
+
     with SessionLocal() as db:
         for case in cases:
             results = retrieve_chunks(
@@ -48,13 +50,23 @@ def main():
                     correct_abstentions += 1
             else:
                 answerable_total += 1
-                passed = bool(
-                    set(case["expected_sections"])
-                    & retrieved_sections
+            
+                relevant_rank = next(
+                    (
+                        rank
+                        for rank, item in enumerate(results, start=1)
+                        if item["chunk"].section_path
+                        and set(case["expected_sections"])
+                        & set(item["chunk"].section_path)
+                    ),
+                    None,
                 )
+            
+                passed = relevant_rank is not None
 
-                if passed:
-                    answerable_hits += 1
+            if passed:
+                answerable_hits += 1
+                reciprocal_rank_sum += 1 / relevant_rank
 
             print(
                 f"{case['id']}: {'PASS' if passed else 'FAIL'} "
@@ -64,11 +76,18 @@ def main():
 
     total_passed = answerable_hits + correct_abstentions
 
+    mrr = (
+        reciprocal_rank_sum / answerable_total
+        if answerable_total
+        else 0.0
+    )
+
     print("\n--- BENCHMARK SUMMARY ---")
     print(f"Total cases: {len(cases)}")
     print(f"Answerable retrieval hits: {answerable_hits}/{answerable_total}")
     print(f"Correct abstentions: {correct_abstentions}/{abstention_total}")
     print(f"Overall passed: {total_passed}/{len(cases)}")
+    print(f"MRR: {mrr:.3f}")
 
 
 if __name__ == "__main__":
