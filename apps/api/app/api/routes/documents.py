@@ -208,32 +208,36 @@ def embed_document_version(
 
     chunks = db.scalars(
         select(DocumentChunk)
-        .where(
-            DocumentChunk.version_id == version_id,
-            DocumentChunk.embedding.is_(None),
-        )
+        .where(DocumentChunk.version_id == version_id)
         .order_by(DocumentChunk.chunk_index)
     ).all()
-
+    
+    pending_chunks = [
+        chunk for chunk in chunks
+        if chunk.embedding is None
+    ]
+    
     try:
-        for chunk in chunks:
+        for chunk in pending_chunks:
             chunk.embedding = generate_embedding(
                 text=chunk.content,
                 title=document.title,
             )
-
+    
         db.commit()
-
+    
         return {
-            "status": "completed",
-            "embedded_chunks": len(chunks),
+            "status": "completed" if pending_chunks else "already_embedded",
+            "total_chunks": len(chunks),
+            "embedded_now": len(pending_chunks),
+            "already_embedded": len(chunks) - len(pending_chunks),
             "dimensions": 768,
         }
-
+    
     except Exception:
         db.rollback()
         raise
-
+    
 
 
 @router.post("/search", tags=["Semantic Search"])
