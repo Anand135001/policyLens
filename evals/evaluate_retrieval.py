@@ -22,6 +22,7 @@ def main():
 
     answerable_total = 0
     answerable_hits = 0
+
     abstention_total = 0
     correct_abstentions = 0
 
@@ -42,35 +43,42 @@ def main():
                 if item["chunk"].section_path
             }
 
+            relevant_rank = None
+
             if case["should_abstain"]:
                 abstention_total += 1
                 passed = len(results) == 0
 
                 if passed:
                     correct_abstentions += 1
+
             else:
                 answerable_total += 1
-            
-                relevant_rank = next(
-                    (
-                        rank
-                        for rank, item in enumerate(results, start=1)
-                        if item["chunk"].section_path
-                        and set(case["expected_sections"])
+
+                for rank, item in enumerate(results, start=1):
+                    if (
+                        set(case["expected_sections"])
                         & set(item["chunk"].section_path)
-                    ),
-                    None,
-                )
-            
+                    ):
+                        relevant_rank = rank
+                        break
+
                 passed = relevant_rank is not None
 
-            if passed:
-                answerable_hits += 1
-                reciprocal_rank_sum += 1 / relevant_rank
+                if passed:
+                    answerable_hits += 1
+                    reciprocal_rank_sum += 1.0 / relevant_rank
+
+            rank_info = (
+                f"rank={relevant_rank}"
+                if relevant_rank is not None
+                else ""
+            )
 
             print(
                 f"{case['id']}: {'PASS' if passed else 'FAIL'} "
                 f"| retrieved={len(results)} "
+                f"| {rank_info} "
                 f"| sections={sorted(retrieved_sections)}"
             )
 
@@ -84,8 +92,14 @@ def main():
 
     print("\n--- BENCHMARK SUMMARY ---")
     print(f"Total cases: {len(cases)}")
-    print(f"Answerable retrieval hits: {answerable_hits}/{answerable_total}")
-    print(f"Correct abstentions: {correct_abstentions}/{abstention_total}")
+    print(
+        f"Answerable retrieval hits: "
+        f"{answerable_hits}/{answerable_total}"
+    )
+    print(
+        f"Correct abstentions: "
+        f"{correct_abstentions}/{abstention_total}"
+    )
     print(f"Overall passed: {total_passed}/{len(cases)}")
     print(f"MRR: {mrr:.3f}")
 
