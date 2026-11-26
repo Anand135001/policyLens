@@ -10,12 +10,11 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models import Document, DocumentVersion, DocumentChunk
 from app.schemas.document import DocumentCreate, DocumentRead, DocumentVersionRead
-from app.schemas.search import SearchRequest
-from app.schemas.search import AskRequest
+from app.schemas.search import SearchRequest, AskRequest, CompareVersionsRequest
 from app.services.pdf_parser import parse_pdf
 from app.services.chunker import chunk_docling_json
 from app.services.embedding import generate_embedding, generate_query_embedding
-from app.services.answer import generate_grounded_answer
+from app.services.answer import generate_grounded_answer, generate_version_comparison
 from app.services.retrieval import retrieve_chunks
 
 from app.core.config import PROJECT_ROOT
@@ -340,5 +339,98 @@ def ask_documents(
                 "section": source["section"],
             }
             for index, source in enumerate(sources, start=1)
+        ],
+    }
+
+
+
+@router.post("/compare-versions", tags=["Version Comparison"])
+def compare_versions(
+    payload: CompareVersionsRequest,
+    db: Session = Depends(get_db),
+):
+    older = db.get(DocumentVersion, payload.older_version_id)
+    newer = db.get(DocumentVersion, payload.newer_version_id)
+
+    if older is None or newer is None:
+        raise HTTPException(404, "Document version not found")
+
+    if older.id == newer.id:
+        raise HTTPException(400, "Select two different versions")
+
+    if older.document_id != newer.document_id:
+        raise HTTPException(
+            400,
+            "Both versions must belong to the same document",
+        )
+
+    older_results = retrieve_chunks(
+        db=db,
+        query=payload.query,
+        version_id=older.id,
+        limit=payload.top_k,
+    )
+
+    newer_results = retrieve_chunks(
+        db=db,
+        query=payload.query,
+        version_id=newer.id,
+        limit=payload.top_k,
+    )
+
+    def prepare_sources(results, prefix):
+        sources = []
+
+        for index, item in enumerate(results, start=1):
+            chunk = item["chunk"]
+            document = item["document"]
+
+            sources.append({
+                "source_id": f"{prefix}-S{index}",
+                "document_title": document.title,
+                "pages": chunk.page_numbers,
+                "section": chunk.section_path,
+                "content": chunk.content,
+            })
+
+        return sources
+
+    older_sources = prepare_sources(older_results, "OLD")
+    newer_sources = prepare_sources(newer_results, "NEW")
+
+    if not older_sources or not newer_sources:
+        return {
+            "status": "insufficient_evidence",
+            "message": (
+                "Cannot reliably compare both versions because "
+                "one or both versions lack relevant retrieved evidence."
+            ),
+            "older_version": older.version_label,
+            "newer_version": newer.version_label,
+            "older_sources": older_sources,
+            "newer_sources": newer_sources,
+        }
+
+    comparison = generate_version_comparison(
+        question=payload.query,
+        older_label=older.version_label or "Older version",
+        newer_label=newer.version_label or "Newer version",
+        older_sources=older_sources,
+        newer_sources=newer_sources,
+    )
+
+    return {
+        "status": "completed",
+        "question": payload.query,
+        "older_version": older.version_label,
+        "newer_version": newer.version_label,
+        "comparison": comparison,
+        "older_sources": [
+            {key: value for key, value in source.items() if key != "content"}
+            for source in older_sources
+        ],
+        "newer_sources": [
+            {key: value for key, value in source.items() if key != "content"}
+            for source in newer_sources
         ],
     }
