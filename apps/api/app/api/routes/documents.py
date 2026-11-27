@@ -1,5 +1,3 @@
-from google.genai.errors import ServerError
-
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -14,7 +12,11 @@ from app.schemas.search import SearchRequest, AskRequest, CompareVersionsRequest
 from app.services.pdf_parser import parse_pdf
 from app.services.chunker import chunk_docling_json
 from app.services.embedding import generate_embedding, generate_query_embedding
-from app.services.answer import generate_grounded_answer, generate_version_comparison
+from app.services.answer import (
+    generate_grounded_answer, 
+    generate_version_comparison,
+    GenerationProviderError,
+)
 from app.services.retrieval import retrieve_chunks
 
 from app.core.config import PROJECT_ROOT
@@ -317,11 +319,11 @@ def ask_documents(
             question=payload.query,
             sources=sources,
         )
-    except ServerError as exc:
+    except GenerationProviderError as exc:
         raise HTTPException(
-            status_code=503,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=(
-                "Gemini is temporarily unavailable. "
+                "The document generation service is temporarily unavailable. "
                 "Please retry shortly."
             ),
         ) from exc
@@ -411,13 +413,22 @@ def compare_versions(
             "newer_sources": newer_sources,
         }
 
-    comparison = generate_version_comparison(
-        question=payload.query,
-        older_label=older.version_label or "Older version",
-        newer_label=newer.version_label or "Newer version",
-        older_sources=older_sources,
-        newer_sources=newer_sources,
-    )
+    try:
+        comparison = generate_version_comparison(
+            question=payload.query,
+            older_label=older.version_label or "Older version",
+            newer_label=newer.version_label or "Newer version",
+            older_sources=older_sources,
+            newer_sources=newer_sources,
+        )
+    except GenerationProviderError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "The document comparison service is temporarily unavailable. "
+                "Please retry shortly."
+            ),
+        ) from exc
 
     return {
         "status": "completed",
