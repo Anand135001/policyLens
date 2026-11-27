@@ -58,6 +58,23 @@ class Settings(BaseSettings):
 
     generation_model: str = "gemini-3.8-flash" 
 
+
+    openrouter_api_key: SecretStr | None = Field(
+        default=None,
+        validation_alias="OPENROUTER_API_KEY",
+    )
+    
+    openrouter_model: str = Field(
+        default="openrouter/free",
+        validation_alias="OPENROUTER_MODEL",
+    )
+    
+    openrouter_base_url: str = Field(
+        default="https://openrouter.ai/api/v1",
+        validation_alias="OPENROUTER_BASE_URL",
+    )
+
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
