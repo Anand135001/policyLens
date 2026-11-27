@@ -137,10 +137,16 @@ def generate_version_comparison(
                 Present the comparison clearly and explain its limitations.
             """,
             temperature=0.2,
-            max_output_tokens=1500,
+            max_output_tokens=2500,
         ),
     )
 
+    candidate = response.candidates[0] if response.candidates else None
+    finish_reason = candidate.finish_reason if candidate else None
+    
+    if getattr(finish_reason, "name", str(finish_reason)) == "MAX_TOKENS":
+        raise RuntimeError("Comparison response was truncated by the token limit")
+    
     if not response.text:
         raise RuntimeError("Gemini returned an empty comparison")
 
