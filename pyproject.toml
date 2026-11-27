@@ -16,6 +16,7 @@ dependencies = [
     "docling>=2.150.1",
     "google-genai>=3.6.1",
     "pgvector>=0.5.1",
+    "httpx>=0.28.1",
 ]
 
 [dependency-groups]
