@@ -16,6 +16,7 @@ from app.services.answer import (
     generate_grounded_answer, 
     generate_version_comparison,
     GenerationProviderError,
+    GenerationOutputTruncatedError
 )
 from app.services.retrieval import retrieve_chunks
 
@@ -428,6 +429,12 @@ def compare_versions(
                 "The document comparison service is temporarily unavailable. "
                 "Please retry shortly."
             ),
+        ) from exc
+
+    except GenerationOutputTruncatedError as exc :
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="The generation providers are temporarily unavailable",
         ) from exc
 
     return {

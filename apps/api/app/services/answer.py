@@ -18,6 +18,9 @@ TRANSIENT_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 class GenerationProviderError(RuntimeError):
     """Raised when no configured generation provider can complete a request."""
 
+class GenerationOutputTruncatedError(RuntimeError):
+    """Raised when a model stops before completing its response."""
+
 
 @dataclass(frozen=True)
 class GeneratedText:
@@ -349,12 +352,12 @@ def generate_version_comparison(
             Evidence:
             {context}
         """,
-        max_output_tokens=2500,
+        max_output_tokens=4000,
     )
 
     if result.finish_reason in {"MAX_TOKENS", "length"}:
-        raise RuntimeError(
-            "Comparison response was truncated by the token limit."
+        raise GenerationOutputTruncatedError(
+            "Comparison response was truncated by the model's output limit."
         )
 
     return result.text
