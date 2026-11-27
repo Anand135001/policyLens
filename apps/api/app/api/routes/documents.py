@@ -431,10 +431,13 @@ def compare_versions(
             ),
         ) from exc
 
-    except GenerationOutputTruncatedError as exc :
+    except GenerationOutputTruncatedError as exc:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="The generation providers are temporarily unavailable",
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=(
+                "The AI model returned an incomplete comparison. "
+                "Try narrowing the question or increasing the output token limit."
+            ),
         ) from exc
 
     return {
